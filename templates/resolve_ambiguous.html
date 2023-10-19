@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Resolve Ambiguous Columns</title>
+    <style>
+        body {
+            background-color: #2c2c2c;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .center-div {
+            text-align: center;
+            font-size: 1.2em;
+        }
+        select {
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+        input[type="submit"] {
+            font-size: 1.2em;
+            padding: 10px 20px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="center-div">
+        <h1>Resolve Ambiguous Columns</h1>
+        <form action="/resolve_ambiguous/" method="post">
+            {% for col, choices in options.items() %}
+                <label for="{{ col }}">{{ col }} can refer to:</label>
+                <select name="{{ col }}">
+                    {% for choice in choices %}
+                        <option value="{{ choice }}">{{ choice }}</option>
+                    {% endfor %}
+                </select>
+                <br><br>
+            {% endfor %}
+            <input type="submit" value="Submit">
+        </form>
+    </div>
+</body>
+</html>

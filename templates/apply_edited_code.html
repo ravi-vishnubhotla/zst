@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Apply Edited Code</title>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #ddd;
+            font-family: Arial, sans-serif;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            border: 1px solid white;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px;
+            border: 1px solid white;
+        }
+        th {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h1>Final DataFrame after Applying Transformations</h1>
+    {{ table | safe }}
+</body>
+</html>
