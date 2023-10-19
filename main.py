@@ -12,8 +12,7 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 import json
-#import base64
-
+import base64
 
 def get_secret():
 
@@ -39,8 +38,7 @@ def get_secret():
     
 # Set OpenAI API key 
 secrets = get_secret()
-openai.api_key = secrets.get('apiKey')
-
+openai.api_key = secrets['OPEN_API_KEY']
 app = FastAPI()
 
 # Initialize Jinja2 templates
