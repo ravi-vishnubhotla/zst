@@ -87,8 +87,72 @@ Example tables are attached as `.csv` files.
 2. Rate Limiting: Error if OpenAI API rate limit is exceeded.
 3. Connectivity Issues: Error if unable to reach OpenAI API.
 
-To handle most LLM errors, we can return back to main page and ask user to start from beginning
+## Exception handling
+1. To handle most LLM errors, we can return back to main page and ask user to start from beginning.
+2. Most other errors also stem from LLM wrongly estimating column names etc., so redirecting to home page and starting over should fix majority of issues.
+3. It is better to test and add custom exceptions and how to handle them separately
 
 ---
 
 **To overcome these edge cases and make this code production ready, there are lot of validation mechanisms and alerts that can be set up**
+
+---
+
+## Retraining on ingested data
+We can save user feedback and corresponding error and store all the columns and prepare data for the model
+
+# Sample code:
+
+**Synthesizing some data**
+```
+data = {'column1': [1, 2, 3, None, 5], 'column2': [None, 2, 3, 4, 5]}
+df = pd.DataFrame(data)
+```
+
+**Simulated function that performs table transformation**
+```
+def transform_table(df):
+    try:
+        df['new_column'] = df['column1'] + df['column2']
+    except Exception as e:
+        # Log the error and the data
+        error_data.append({"input_data": df.to_dict(), "error": str(e)})
+        raise e
+```
+
+**Synthetic Error Logs and Human Feedback**
+we could maintain logs of errors and human feedback like this:
+```
+error_data = []
+feedback_data = [
+    {"input_data": df[:2].to_dict(), "feedback": "Works well"},
+    {"input_data": df[2:4].to_dict(), "feedback": "Fails sometimes"},
+]
+```
+
+**Retraining the Model**
+Once we have accumulated enough data and feedback, we could identify the common causes of errors. For instance, we could realize that errors frequently occur when there are missing values.
+
+After this analysis, we could improve the table transformation function like this:
+
+**Improved function**
+```
+def transform_table_v2(df):
+    df['new_column'] = df['column1'].fillna(0) + df['column2'].fillna(0)
+```
+
+**FastAPI Integration**
+In the FastAPI application, we can switch to this new function after it has been tested:
+
+```
+@app.post("/transform/")
+async def transform(df: dict):
+    df = pd.DataFrame(df)
+    try:
+        result = transform_table_v2(df)  # Using the new function
+        return {"result": result.to_dict()}
+    except Exception as e:
+        return error_redirect(request)
+```
+
+This way, we have utilized logged error data and human feedback for improving the table transformation process.
