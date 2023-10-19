@@ -103,9 +103,13 @@ async def upload_file(file: UploadFile = File(...), state: SharedState = Depends
 
 @app.get("/uploadfileA/")
 async def upload_form_a(request: Request, state: SharedState = Depends(get_shared_state)):
-    if not state.template_table_info:
-        raise HTTPException(status_code=400, detail="Template table not uploaded yet")
-    return templates.TemplateResponse("upload_form_a.html", {"request": request})
+    try:
+        if not state.template_table_info:
+            raise HTTPException(status_code=400, detail="Template table not uploaded yet")
+        return templates.TemplateResponse("upload_form_a.html", {"request": request})
+    except Exception as e:
+        logging.error(f"Error in upload_form_a: {str(e)}")
+        return RedirectResponse(url="/", status_code=303)
 
 @app.post("/uploadfileA/")
 async def upload_fileA(file: UploadFile = File(...), state: SharedState = Depends(get_shared_state)):
@@ -116,7 +120,8 @@ async def upload_fileA(file: UploadFile = File(...), state: SharedState = Depend
         print(f"Reasons: {state.reasons}\nMapped columns: {state.mapped_cols}\nAmbiguous columns: {state.ambiguous_columns}")
         return resolve_ambiguity(state)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in upload_fileA: {str(e)}")
+        return RedirectResponse(url="/", status_code=303)
 
 @app.get("/resolve_ambiguous/", response_class=HTMLResponse)
 async def resolve_ambiguous(request: Request, state: SharedState = Depends(get_shared_state)):
@@ -156,9 +161,17 @@ async def resolve_ambiguous_post(request: Request, state: SharedState = Depends(
     
 @app.get("/show_code/")
 async def show_code(request: Request, state: SharedState = Depends(get_shared_state)):
-    code_snippet = generate_transformation_code(state)
-    return templates.TemplateResponse("show_code.html", {"request": request, "code_snippet": code_snippet})
-
+    try:
+        code_snippet = generate_transformation_code(state)
+        return templates.TemplateResponse("show_code.html", {"request": request, "code_snippet": code_snippet})
+    except Exception as e:
+        logging.error(f"Error in show_code: {str(e)}")
+        shared_state.reset()
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
+    
 @app.post("/confirm_code/")
 async def confirm_code(request: Request, state: SharedState = Depends(get_shared_state)):
     code_snippet = generate_transformation_code(state)
@@ -206,9 +219,13 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
 
 @app.get("/edit_code/")
 async def edit_code(request: Request, state: SharedState = Depends(get_shared_state)):
-    code_snippet = generate_transformation_code(state)
-    return templates.TemplateResponse("edit_code.html", {"request": request, "code_snippet": code_snippet})
-
+    try:
+        code_snippet = generate_transformation_code(state)
+        return templates.TemplateResponse("edit_code.html", {"request": request, "code_snippet": code_snippet})
+    except Exception as e:
+        logging.error(f"Error in edit_code: {str(e)}")
+        return RedirectResponse(url="/", status_code=303)
+    
 @app.post("/apply_edited_code/")
 async def apply_edited_code(request: Request, state: SharedState = Depends(get_shared_state)):
     form = await request.form()
