@@ -40,7 +40,6 @@ def get_secret():
 # Set OpenAI API key 
 secrets = get_secret()
 openai.api_key = secrets.get('apiKey')
-print(f"OpenAI API key: {openai.api_key}")
 
 app = FastAPI()
 
