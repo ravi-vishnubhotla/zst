@@ -18,6 +18,9 @@ import logging
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
+#log filename
+logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+
 def get_secret():
 
     secret_name = "open-api-key"
