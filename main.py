@@ -13,6 +13,10 @@ import boto3
 from botocore.exceptions import ClientError
 import json
 import base64
+import logging
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
 
 def get_secret():
 
@@ -108,7 +112,8 @@ async def resolve_ambiguous_post(request: Request, state: SharedState = Depends(
         if key in state.ambiguous_columns:
             state.resolved_columns[key] = value
 
-    print(f"Resolved columns: {state.resolved_columns}\nRedirecting to show_code endpoint")
+    # print(f"Resolved columns: {state.resolved_columns}\nRedirecting to show_code endpoint")
+    logging.info(f"Resolved columns: {state.resolved_columns}\nRedirecting to show_code endpoint")
     return RedirectResponse(url="/show_code/", status_code=303)
 
 @app.get("/show_code/")
@@ -120,10 +125,11 @@ async def show_code(request: Request, state: SharedState = Depends(get_shared_st
 async def confirm_code(request: Request, state: SharedState = Depends(get_shared_state)):
     code_snippet = generate_transformation_code(state)
     try:
-        # Assuming you have table A data in a DataFrame called df
-        # print df columns before applying transformations
-        print("Table A columns before applying transformations:", state.df.columns.tolist())
-        print("Executing code snippet to transform table A to template table")
+
+        # print("Table A columns before applying transformations:", state.df.columns.tolist())
+        # print("Executing code snippet to transform table A to template table")
+        logging.info(f"Table A columns before applying transformations: {state.df.columns.tolist()}")
+        logging.info(f"Executing code snippet to transform table A to template table: {code_snippet}")
 
         exec_globals = {}
         exec_locals = {"df": state.df}
@@ -131,12 +137,15 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
         try:
             exec(code_snippet, exec_globals, exec_locals)
             state.df = exec_locals['df']
-            print("Code snippet executed successfully.")
+            # print("Code snippet executed successfully.")
+            logging.info("Code snippet executed successfully.")
         except Exception as e_inner:
-            print(f"Error executing code snippet: {str(e_inner)}")
+            # print(f"Error executing code snippet: {str(e_inner)}")
+            logging.error(f"Error executing code snippet: {str(e_inner)}")
             raise e_inner
         # print df columns after applying transformations
-        print("Table A columns after applying transformations:", state.df.columns.tolist())
+        # print("Table A columns after applying transformations:", state.df.columns.tolist())
+        logging.info(f"Table A columns after applying transformations: {state.df.columns.tolist()}")
 
         # Save the final dataframe as a CSV file
         state.df.to_csv("final_table.csv", index=False)
@@ -146,15 +155,19 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
         for col in state.df.columns:
             assert state.df[col].dtype == state.df_template[col].dtype
 
-        print("Validation checks passed.")
+        # print("Validation checks passed.")
+        logging.info("Validation checks passed.")
 
         # Show the final DataFrame after applying transformations
-        print("Converting df to html table")
+        # print("Converting df to html table")
+        logging.info("Converting df to html table")
         try:
             table = state.df.to_html(classes='table')
-            print("Converted df to html table successfully", table)
+            # print("Converted df to html table successfully", table)
+            logging.info(f"Converted df to html table successfully: {table}")
         except Exception as e:
-            print(f"Error converting df to html table: {str(e)}")
+            # print(f"Error converting df to html table: {str(e)}")
+            logging.error(f"Error converting df to html table: {str(e)}")
             table = None
         return templates.TemplateResponse("confirm_code.html", {"request": request, "table": table})
     except Exception as e:
@@ -173,20 +186,25 @@ async def apply_edited_code(request: Request, state: SharedState = Depends(get_s
 
     try:
         # Execute the edited code
-        print("Table A columns before applying transformations:", state.df.columns.tolist())
-        print("Executing code snippet to transform table A to template table")
+        # print("Table A columns before applying transformations:", state.df.columns.tolist())
+        logging.info(f"Table A columns before applying transformations: {state.df.columns.tolist()}")
+        # print("Executing code snippet to transform table A to template table")
+        logging.info(f"Executing code snippet to transform table A to template table:\n {edited_code}") 
         exec_globals = {}
         exec_locals = {"df": state.df}
 
         try:
             exec(edited_code, exec_globals, exec_locals)
             state.df = exec_locals['df']
-            print("Code snippet executed successfully.")
+            # print("Code snippet executed successfully.")
+            logging.info("Code snippet executed successfully.")
         except Exception as e_inner:
-            print(f"Error executing code snippet: {str(e_inner)}")
+            # print(f"Error executing code snippet: {str(e_inner)}")
+            logging.error(f"Error executing code snippet: {str(e_inner)}")
             raise e_inner
         # print df columns after applying transformations
-        print("Table A columns after applying transformations:", state.df.columns.tolist())
+        # print("Table A columns after applying transformations:", state.df.columns.tolist())
+        logging.info(f"Table A columns after applying transformations: {state.df.columns.tolist()}")
 
         # Save the final dataframe as a CSV file
         state.df.to_csv("final_table.csv", index=False)
@@ -196,13 +214,16 @@ async def apply_edited_code(request: Request, state: SharedState = Depends(get_s
         for col in state.df.columns:
             assert state.df[col].dtype == state.df_template[col].dtype
 
-        print("Validation checks passed.")
+        # print("Validation checks passed.")
+        logging.info("Validation checks passed.")
 
         try:
             table = state.df.to_html(classes='table')
-            print("Converted df to html table successfully", table)
+            # print("Converted df to html table successfully", table)
+            logging.info(f"Converted df to html table successfully: {table}")
         except Exception as e:
-            print(f"Error converting df to html table: {str(e)}")
+            # print(f"Error converting df to html table: {str(e)}")
+            logging.error(f"Error converting df to html table: {str(e)}")
             table = None
         return templates.TemplateResponse("apply_edited_code.html", {"request": request, "table": table})
     
@@ -224,10 +245,12 @@ def extract_table_info(df: pd.DataFrame):
 
 def resolve_ambiguity(mapped_cols, state: SharedState):
     if state.ambiguous_columns:
-        print(f"Ambiguous columns found: {state.ambiguous_columns}\nRedirecting to resolve_ambiguous endpoint")
+        # print(f"Ambiguous columns found: {state.ambiguous_columns}\nRedirecting to resolve_ambiguous endpoint")
+        logging.info(f"Ambiguous columns found: {state.ambiguous_columns}\nRedirecting to resolve_ambiguous endpoint")
         return RedirectResponse(url="/resolve_ambiguous/", status_code=303)
     else:
-        print(f"No ambiguous columns found. Returning comparison result")
+        # print(f"No ambiguous columns found. Returning comparison result")
+        logging.info(f"No ambiguous columns found. Returning comparison result")
         final_columns = {key: value for key, value in mapped_cols.items() if key not in state.ambiguous_columns}
         return final_columns
     
