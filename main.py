@@ -19,7 +19,10 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 #log filename
-logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+# logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+
+def error_redirect():
+    return templates.TemplateResponse("redirect_to_home.html", {"message": "Sorry. Try from the beginning"})
 
 def get_secret():
 
@@ -47,6 +50,10 @@ def get_secret():
 secrets = get_secret()
 openai.api_key = secrets['OPEN_API_KEY']
 app = FastAPI()
+
+@app.exception_handler(Exception)
+async def custom_exception_handler(request: Request, exc: Exception):
+    return error_redirect()
 
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory="templates")
@@ -358,8 +365,12 @@ def generate_transformation_code(state: SharedState):
     """
 
     # Reverse the mapping to prepare for renaming Table A columns
-    
-    reversed_mapping = {value: key for key, value in state.resolved_columns.items()}
+    try:
+        reversed_mapping = {value: key for key, value in state.resolved_columns.items()}
+    except Exception as e:
+        logging.error(f"Error reversing mapping: {str(e)}")
+        # return root page
+        return RedirectResponse(url="/", status_code=303)
     
     # Initialize list to hold code snippets
     code_snippets = []
