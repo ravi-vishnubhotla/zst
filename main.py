@@ -18,12 +18,6 @@ import logging
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
-#log filename
-# logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
-
-def error_redirect():
-    return templates.TemplateResponse("redirect_to_home.html", {"message": "Sorry. Try from the beginning"})
-
 def get_secret():
 
     secret_name = "open-api-key"
@@ -49,10 +43,24 @@ def get_secret():
 # Set OpenAI API key 
 secrets = get_secret()
 openai.api_key = secrets['OPEN_API_KEY']
+
+
+def error_redirect(request: Request):
+    return templates.TemplateResponse("redirect_to_home.html", {"request": request, "message": "Sorry. Try again.\n\nRedirecting to home page..."})
+
 app = FastAPI()
 
-@app.exception_handler(Exception)
-async def custom_exception_handler(request: Request, exc: Exception):
+# @app.exception_handler(Exception)
+# async def custom_exception_handler(request: Request, exc: Exception):
+#     return error_redirect()
+
+@app.exception_handler(500)
+async def internal_server_error(request: Request, exc: HTTPException):
+    return error_redirect()
+    # return RedirectResponse(url="/")
+
+@app.exception_handler(405)
+async def internal_server_error(request: Request, exc: HTTPException):
     return error_redirect()
 
 # Initialize Jinja2 templates
@@ -61,6 +69,9 @@ templates = Jinja2Templates(directory="templates")
 # Shared state
 class SharedState:
     def __init__(self):
+        self.reset()
+
+    def reset(self):
         self.template_table_info = None
         self.df_template = None
         self.ambiguous_columns = None
@@ -69,6 +80,7 @@ class SharedState:
         self.final_columns = None
         self.df = None
         self.resolved_columns = None
+        self.reasons = None
 
 shared_state = SharedState()
 
@@ -80,6 +92,7 @@ def get_shared_state():
 
 @app.get("/", response_class=HTMLResponse)
 async def upload_form(request: Request):
+    shared_state.reset()
     return templates.TemplateResponse("upload_form.html", {"request": request})
 
 @app.post("/uploadfile/")
@@ -96,36 +109,51 @@ async def upload_form_a(request: Request, state: SharedState = Depends(get_share
 
 @app.post("/uploadfileA/")
 async def upload_fileA(file: UploadFile = File(...), state: SharedState = Depends(get_shared_state)):
-    state.df = await read_file(file)
-    state.table_a_info = extract_table_info(state.df)
-    comparison_result, state.mapped_cols, state.ambiguous_columns = await compare_tables_with_openai(state.template_table_info, state.table_a_info, state)
-    return resolve_ambiguity(state.mapped_cols, state)
+    try:
+        state.df = await read_file(file)
+        state.table_a_info = extract_table_info(state.df)
+        state.reasons, state.mapped_cols, state.ambiguous_columns = await compare_tables_with_openai(state.template_table_info, state.table_a_info, state)
+        print(f"Reasons: {state.reasons}\nMapped columns: {state.mapped_cols}\nAmbiguous columns: {state.ambiguous_columns}")
+        return resolve_ambiguity(state)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/resolve_ambiguous/", response_class=HTMLResponse)
 async def resolve_ambiguous(request: Request, state: SharedState = Depends(get_shared_state)):
-    if not state.ambiguous_columns:
-        return {"message": "No ambiguous columns to resolve"}
-    return templates.TemplateResponse(
-        "resolve_ambiguous.html",
-        {
-            "request": request,
-            "options": state.ambiguous_columns  # pass the ambiguous_columns dictionary to the template
-        }
-    )
+    try:
+        if not state.ambiguous_columns:
+            return RedirectResponse(url="/show_code/", status_code=303)
+        
+        return templates.TemplateResponse(
+            "resolve_ambiguous.html",
+            {
+                "request": request,
+                "options": state.ambiguous_columns,  # pass the ambiguous_columns dictionary to the template
+                "reasons": state.reasons
+            }
+        )
+        pass
+    except Exception as e:
+        logging.error(f"Error in resolve_ambiguous: {str(e)}")
+        return RedirectResponse(url="/", status_code=303)
 
 @app.post("/resolve_ambiguous/")
 async def resolve_ambiguous_post(request: Request, state: SharedState = Depends(get_shared_state)):
-    form = await request.form()
+    try:
+        form = await request.form()
 
-    state.resolved_columns = state.mapped_cols.copy()
-    for key, value in form.items():
-        if key in state.ambiguous_columns:
-            state.resolved_columns[key] = value
+        state.resolved_columns = state.mapped_cols.copy()
+        for key, value in form.items():
+            if key in state.ambiguous_columns:
+                state.resolved_columns[key] = value
 
-    # print(f"Resolved columns: {state.resolved_columns}\nRedirecting to show_code endpoint")
-    logging.info(f"Resolved columns: {state.resolved_columns}\nRedirecting to show_code endpoint")
-    return RedirectResponse(url="/show_code/", status_code=303)
+        logging.info(f"Resolved columns: {state.resolved_columns}\nRedirecting to show_code endpoint")
 
+        return RedirectResponse(url="/show_code/", status_code=303)
+    except Exception as e:
+        logging.error(f"Error in resolve_ambiguous_post: {str(e)}")
+        return RedirectResponse(url="/", status_code=303)
+    
 @app.get("/show_code/")
 async def show_code(request: Request, state: SharedState = Depends(get_shared_state)):
     code_snippet = generate_transformation_code(state)
@@ -136,8 +164,6 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
     code_snippet = generate_transformation_code(state)
     try:
 
-        # print("Table A columns before applying transformations:", state.df.columns.tolist())
-        # print("Executing code snippet to transform table A to template table")
         logging.info(f"Table A columns before applying transformations: {state.df.columns.tolist()}")
         logging.info(f"Executing code snippet to transform table A to template table: {code_snippet}")
 
@@ -147,14 +173,10 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
         try:
             exec(code_snippet, exec_globals, exec_locals)
             state.df = exec_locals['df']
-            # print("Code snippet executed successfully.")
             logging.info("Code snippet executed successfully.")
         except Exception as e_inner:
-            # print(f"Error executing code snippet: {str(e_inner)}")
             logging.error(f"Error executing code snippet: {str(e_inner)}")
             raise e_inner
-        # print df columns after applying transformations
-        # print("Table A columns after applying transformations:", state.df.columns.tolist())
         logging.info(f"Table A columns after applying transformations: {state.df.columns.tolist()}")
 
         # Save the final dataframe as a CSV file
@@ -169,19 +191,17 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
         logging.info("Validation checks passed.")
 
         # Show the final DataFrame after applying transformations
-        # print("Converting df to html table")
         logging.info("Converting df to html table")
         try:
             table = state.df.to_html(classes='table')
-            # print("Converted df to html table successfully", table)
             logging.info(f"Converted df to html table successfully: {table}")
         except Exception as e:
-            # print(f"Error converting df to html table: {str(e)}")
             logging.error(f"Error converting df to html table: {str(e)}")
             table = None
         return templates.TemplateResponse("confirm_code.html", {"request": request, "table": table})
     except Exception as e:
-        return {"message": f"Error during transformations: {str(e)}"}
+        logging.error(f"Error in confirm_code: {str(e)}")
+        return RedirectResponse(url="/", status_code=303)
     
 
 @app.get("/edit_code/")
@@ -253,15 +273,13 @@ def extract_table_info(df: pd.DataFrame):
         "describe": df.describe().to_dict()
     }
 
-def resolve_ambiguity(mapped_cols, state: SharedState):
+def resolve_ambiguity(state: SharedState):
     if state.ambiguous_columns:
-        # print(f"Ambiguous columns found: {state.ambiguous_columns}\nRedirecting to resolve_ambiguous endpoint")
         logging.info(f"Ambiguous columns found: {state.ambiguous_columns}\nRedirecting to resolve_ambiguous endpoint")
         return RedirectResponse(url="/resolve_ambiguous/", status_code=303)
     else:
-        # print(f"No ambiguous columns found. Returning comparison result")
         logging.info(f"No ambiguous columns found. Returning comparison result")
-        final_columns = {key: value for key, value in mapped_cols.items() if key not in state.ambiguous_columns}
+        final_columns = {key: value for key, value in state.mapped_cols.items() if key not in state.ambiguous_columns}
         return final_columns
     
 def build_openai_prompt(info1, info2):
@@ -297,7 +315,10 @@ def build_openai_prompt(info1, info2):
 
     key_value_instruction = "Always the key is template table column name and value is table A column name\n"
 
-    return general_instruction + template_info + table_a_info + mapping_instruction + ambiguity_instruction + key_value_instruction
+    reason_instruction = """\n\nIn the end Please also provide the reason for your mapping in the following format:
+    reason_dict={'column1': 'reason1', 'column2': 'reason2'}\n\n"""
+
+    return general_instruction + template_info + table_a_info + mapping_instruction + ambiguity_instruction + key_value_instruction + reason_instruction
 
 # Function to parse the OpenAI API response
 def parse_openai_response(response):
@@ -307,17 +328,18 @@ def parse_openai_response(response):
 
 # Function to filter and prepare the final result
 def prepare_final_result(matches, state: SharedState = Depends(get_shared_state)):
-    mapped_cols = {}
-    state.ambiguous_columns = {}
-    
+
     if matches and len(matches) >= 2:
-        mapped_cols = ast.literal_eval("{" + matches[0] + "}")
+        state.mapped_cols = ast.literal_eval("{" + matches[0] + "}")
         state.ambiguous_columns = ast.literal_eval("{" + matches[1] + "}")
-    
+        state.reasons = ast.literal_eval("{" + matches[2] + "}")
+    else:
+        # return to home page
+        return error_redirect()
     state.ambiguous_columns = {key: value for key, value in state.ambiguous_columns.items() if len(value) > 1}
-    mapped_cols = {key: value for key, value in mapped_cols.items() if key not in state.ambiguous_columns}
+    state.mapped_cols = {key: value for key, value in state.mapped_cols.items() if key not in state.ambiguous_columns}
     
-    return mapped_cols, state.ambiguous_columns
+    return state.mapped_cols, state.ambiguous_columns, state.reasons
 
 # The main function
 async def compare_tables_with_openai(info1, info2, state: SharedState = Depends(get_shared_state)):
@@ -335,17 +357,17 @@ async def compare_tables_with_openai(info1, info2, state: SharedState = Depends(
         )
         
         matches = parse_openai_response(response)
-        mapped_cols, state.ambiguous_columns = prepare_final_result(matches)
+        state.mapped_cols, state.ambiguous_columns, state.reasons = prepare_final_result(matches)
         
-        if mapped_cols and state.ambiguous_columns:
+        if state.mapped_cols and state.ambiguous_columns:
             break
         
         retries += 1
     
-    if retries == max_retries and (not mapped_cols or not state.ambiguous_columns):
+    if retries == max_retries and (not state.mapped_cols or not state.ambiguous_columns):
         return "Max retries reached. No suitable mapping found.", {}, {}
     
-    return None, mapped_cols, state.ambiguous_columns
+    return state.reasons, state.mapped_cols, state.ambiguous_columns
 
 def generate_transformation_code(state: SharedState):
     """
