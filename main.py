@@ -56,12 +56,14 @@ app = FastAPI()
 
 @app.exception_handler(500)
 async def internal_server_error(request: Request, exc: HTTPException):
-    return error_redirect()
+    shared_state.reset()
+    return error_redirect(request)
     # return RedirectResponse(url="/")
 
 @app.exception_handler(405)
 async def internal_server_error(request: Request, exc: HTTPException):
-    return error_redirect()
+    shared_state.reset()
+    return error_redirect(request)
 
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory="templates")
@@ -96,10 +98,18 @@ async def upload_form(request: Request):
     return templates.TemplateResponse("upload_form.html", {"request": request})
 
 @app.post("/uploadfile/")
-async def upload_file(file: UploadFile = File(...), state: SharedState = Depends(get_shared_state)):
-    state.df_template = await read_file(file)
-    state.template_table_info = extract_table_info(state.df_template)
-    return RedirectResponse(url="/uploadfileA/", status_code=303)
+async def upload_file(request: Request, file: UploadFile = File(...), state: SharedState = Depends(get_shared_state)):
+    try:
+        state.df_template = await read_file(file)
+        state.template_table_info = extract_table_info(state.df_template)
+        return RedirectResponse(url="/uploadfileA/", status_code=303)
+    except Exception as e:
+        logging.error(f"Error in upload_file: {str(e)}")
+        shared_state.reset()
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
 
 @app.get("/uploadfileA/")
 async def upload_form_a(request: Request, state: SharedState = Depends(get_shared_state)):
@@ -108,11 +118,15 @@ async def upload_form_a(request: Request, state: SharedState = Depends(get_share
             raise HTTPException(status_code=400, detail="Template table not uploaded yet")
         return templates.TemplateResponse("upload_form_a.html", {"request": request})
     except Exception as e:
+        shared_state.reset()
         logging.error(f"Error in upload_form_a: {str(e)}")
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
 
 @app.post("/uploadfileA/")
-async def upload_fileA(file: UploadFile = File(...), state: SharedState = Depends(get_shared_state)):
+async def upload_fileA(request: Request, file: UploadFile = File(...), state: SharedState = Depends(get_shared_state)):
     try:
         state.df = await read_file(file)
         state.table_a_info = extract_table_info(state.df)
@@ -120,8 +134,12 @@ async def upload_fileA(file: UploadFile = File(...), state: SharedState = Depend
         print(f"Reasons: {state.reasons}\nMapped columns: {state.mapped_cols}\nAmbiguous columns: {state.ambiguous_columns}")
         return resolve_ambiguity(state)
     except Exception as e:
+        shared_state.reset()
         logging.error(f"Error in upload_fileA: {str(e)}")
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
 
 @app.get("/resolve_ambiguous/", response_class=HTMLResponse)
 async def resolve_ambiguous(request: Request, state: SharedState = Depends(get_shared_state)):
@@ -139,8 +157,12 @@ async def resolve_ambiguous(request: Request, state: SharedState = Depends(get_s
         )
         pass
     except Exception as e:
+        shared_state.reset()
         logging.error(f"Error in resolve_ambiguous: {str(e)}")
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
 
 @app.post("/resolve_ambiguous/")
 async def resolve_ambiguous_post(request: Request, state: SharedState = Depends(get_shared_state)):
@@ -156,8 +178,12 @@ async def resolve_ambiguous_post(request: Request, state: SharedState = Depends(
 
         return RedirectResponse(url="/show_code/", status_code=303)
     except Exception as e:
+        shared_state.reset()
         logging.error(f"Error in resolve_ambiguous_post: {str(e)}")
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
     
 @app.get("/show_code/")
 async def show_code(request: Request, state: SharedState = Depends(get_shared_state)):
@@ -213,8 +239,12 @@ async def confirm_code(request: Request, state: SharedState = Depends(get_shared
             table = None
         return templates.TemplateResponse("confirm_code.html", {"request": request, "table": table})
     except Exception as e:
+        shared_state.reset()
         logging.error(f"Error in confirm_code: {str(e)}")
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
     
 
 @app.get("/edit_code/")
@@ -223,8 +253,12 @@ async def edit_code(request: Request, state: SharedState = Depends(get_shared_st
         code_snippet = generate_transformation_code(state)
         return templates.TemplateResponse("edit_code.html", {"request": request, "code_snippet": code_snippet})
     except Exception as e:
+        shared_state.reset()
         logging.error(f"Error in edit_code: {str(e)}")
-        return RedirectResponse(url="/", status_code=303)
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
     
 @app.post("/apply_edited_code/")
 async def apply_edited_code(request: Request, state: SharedState = Depends(get_shared_state)):
@@ -275,7 +309,12 @@ async def apply_edited_code(request: Request, state: SharedState = Depends(get_s
         return templates.TemplateResponse("apply_edited_code.html", {"request": request, "table": table})
     
     except Exception as e:
-        return {"message": f"Error during transformations: {str(e)}"}
+        logging.error(f"Error in apply_edited_code: {str(e)}")
+        shared_state.reset()
+        return templates.TemplateResponse(
+            "error_page.html",
+            {"request": request, "error_message": str(e)}
+        )
     
 ####################
 
